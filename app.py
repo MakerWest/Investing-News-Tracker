@@ -54,11 +54,6 @@ def short_text(text, max_chars=450):
         return text
     return text[:max_chars].rsplit(" ", 1)[0] + "..."
 
-def anchor_id(company, ticker):
-    raw = f"{company}-{ticker}".lower()
-    raw = re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
-    return raw
-
 def fetch_rss(url, limit=50):
     response = requests.get(
         url,
@@ -187,68 +182,43 @@ def render_grouped_results(posts, error=None):
 
     st.subheader("Grouped summary")
 
-    st.markdown(
-        '''
-        <style>
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 8px;
-            margin-bottom: 20px;
-        }
-        .summary-card {
-            border: 1px solid rgba(49, 51, 63, 0.2);
-            border-radius: 10px;
-            padding: 10px 12px;
-            text-decoration: none !important;
-            display: block;
-            color: inherit !important;
-            background: rgba(250, 250, 250, 0.03);
-        }
-        .summary-card:hover {
-            border-color: rgba(255, 75, 75, 0.9);
-            background: rgba(255, 75, 75, 0.06);
-        }
-        .summary-title {
-            font-weight: 700;
-            margin-bottom: 2px;
-        }
-        .summary-meta {
-            font-size: 0.9rem;
-            opacity: 0.75;
-        }
-        </style>
-        ''',
-        unsafe_allow_html=True,
+    summary_rows = []
+    company_options = []
+    for (company, ticker), items in groups.items():
+        sources = sorted(set(item["source"] for item in items))
+        latest = items[0]["published"] if items else ""
+        label = f"{company} ({ticker})"
+        company_options.append(label)
+        summary_rows.append({
+            "Company": company,
+            "Ticker": ticker,
+            "Items": len(items),
+            "Sources": ", ".join(sources),
+            "Latest / first shown": latest,
+        })
+
+    st.dataframe(summary_rows, use_container_width=True, hide_index=True)
+
+    selected_company = st.selectbox(
+        "Jump to company",
+        options=["Show all"] + company_options,
+        help="Streamlit tables do not support reliable in-page jump links, so this filters the matching sections below."
     )
 
-    cards = ['<div class="summary-grid">']
-    for (company, ticker), items in groups.items():
-        aid = anchor_id(company, ticker)
-        sources = ", ".join(sorted(set(item["source"] for item in items)))
-        cards.append(
-            f'''
-            <a class="summary-card" href="#{aid}">
-                <div class="summary-title">{html.escape(company)} ({html.escape(ticker)})</div>
-                <div class="summary-meta">{len(items)} item(s) · {html.escape(sources)}</div>
-            </a>
-            '''
-        )
-    cards.append("</div>")
-    st.markdown("".join(cards), unsafe_allow_html=True)
+    if selected_company != "Show all":
+        selected_key = None
+        for key in groups:
+            if f"{key[0]} ({key[1]})" == selected_company:
+                selected_key = key
+                break
+        groups_to_render = {selected_key: groups[selected_key]} if selected_key else groups
+    else:
+        groups_to_render = groups
 
     st.subheader("Grouped matching items")
 
-    for (company, ticker), items in groups.items():
-        aid = anchor_id(company, ticker)
-        st.markdown(f'<div id="{aid}"></div>', unsafe_allow_html=True)
-
+    for (company, ticker), items in groups_to_render.items():
         with st.expander(f"{company} ({ticker}) — {len(items)} item(s)", expanded=True):
-            st.markdown(
-                '<div style="max-height: 420px; overflow-y: auto; padding-right: 12px;">',
-                unsafe_allow_html=True,
-            )
-
             for item in items:
                 st.markdown(f"**{item['source']}** · {item['published']} · `{item['sentiment']}`")
                 st.caption(f"Matched term: {item['matched_term']}")
@@ -260,8 +230,6 @@ def render_grouped_results(posts, error=None):
                 if item["link"]:
                     st.link_button("Open source", item["link"])
                 st.divider()
-
-            st.markdown("</div>", unsafe_allow_html=True)
 
 def render_all_items(posts):
     st.subheader("All scanned items")
