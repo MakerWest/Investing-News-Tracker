@@ -1,6 +1,8 @@
 import re
 import html
 import urllib.parse
+from collections import defaultdict
+
 import requests
 import feedparser
 import streamlit as st
@@ -11,16 +13,16 @@ st.set_page_config(page_title="Trump Company Mention Tracker", layout="wide")
 TRUTH_FEED_URL = "https://trumpstruth.org/feed"
 
 WATCHLIST = {
-    "Apple": {"ticker": "AAPL", "terms": ["apple", "aapl", "$aapl", "iphone"]},
-    "Amazon": {"ticker": "AMZN", "terms": ["amazon", "amzn", "$amzn"]},
-    "Nvidia": {"ticker": "NVDA", "terms": ["nvidia", "nvda", "$nvda"]},
+    "Apple": {"ticker": "AAPL", "terms": ["apple", "aapl", "$aapl", "iphone", "tim cook"]},
+    "Amazon": {"ticker": "AMZN", "terms": ["amazon", "amzn", "$amzn", "andy jassy"]},
+    "Nvidia": {"ticker": "NVDA", "terms": ["nvidia", "nvda", "$nvda", "jensen huang"]},
     "Intel": {"ticker": "INTC", "terms": ["intel", "intc", "$intc"]},
-    "Dell": {"ticker": "DELL", "terms": ["dell", "dell technologies", "$dell"]},
+    "Dell": {"ticker": "DELL", "terms": ["dell", "dell technologies", "$dell", "michael dell"]},
     "Tesla": {"ticker": "TSLA", "terms": ["tesla", "tsla", "$tsla", "elon musk"]},
-    "Microsoft": {"ticker": "MSFT", "terms": ["microsoft", "msft", "$msft"]},
-    "Meta": {"ticker": "META", "terms": ["meta", "facebook", "instagram", "zuckerberg", "$meta"]},
-    "Google / Alphabet": {"ticker": "GOOGL", "terms": ["google", "alphabet", "googl", "goog", "$googl", "$goog"]},
-    "Walmart": {"ticker": "WMT", "terms": ["walmart", "wmt", "$wmt"]},
+    "Microsoft": {"ticker": "MSFT", "terms": ["microsoft", "msft", "$msft", "satya nadella"]},
+    "Meta": {"ticker": "META", "terms": ["meta", "facebook", "instagram", "zuckerberg", "$meta", "mark zuckerberg"]},
+    "Google / Alphabet": {"ticker": "GOOGL", "terms": ["google", "alphabet", "googl", "goog", "$googl", "$goog", "sundar pichai"]},
+    "Walmart": {"ticker": "WMT", "terms": ["walmart", "wmt", "$wmt", "doug mcmillon"]},
     "Ford": {"ticker": "F", "terms": ["ford", "$f", "ford motor"]},
     "General Motors": {"ticker": "GM", "terms": ["general motors", "gm", "$gm"]},
     "Boeing": {"ticker": "BA", "terms": ["boeing", "$ba"]},
@@ -57,11 +59,33 @@ def google_news_url(query):
     encoded = urllib.parse.quote_plus(query)
     return f"https://news.google.com/rss/search?q={encoded}&hl=en-US&gl=US&ceid=US:en"
 
-def detect_mentions(text):
+def normalise_exclusions(raw):
+    return {x.strip().lower().replace("$", "") for x in raw.split(",") if x.strip()}
+
+def is_excluded(company, ticker, matched_term, exclusions):
+    if not exclusions:
+        return False
+
+    checks = {
+        company.lower(),
+        ticker.lower(),
+        ticker.lower().replace("$", ""),
+        matched_term.lower().replace("$", ""),
+    }
+
+    for exclusion in exclusions:
+        if exclusion in checks:
+            return True
+
+    return False
+
+def detect_mentions(text, exclusions):
     lower = text.lower()
     hits = []
 
     for company, data in WATCHLIST.items():
+        ticker = data["ticker"]
+
         for term in data["terms"]:
             term_l = term.lower()
             if term_l.startswith("$"):
@@ -70,11 +94,12 @@ def detect_mentions(text):
                 pattern = r"\b" + re.escape(term_l) + r"\b"
 
             if re.search(pattern, lower):
-                hits.append({
-                    "company": company,
-                    "ticker": data["ticker"],
-                    "matched_term": term,
-                })
+                if not is_excluded(company, ticker, term, exclusions):
+                    hits.append({
+                        "company": company,
+                        "ticker": ticker,
+                        "matched_term": term,
+                    })
                 break
 
     return hits
@@ -90,8 +115,7 @@ def simple_sentiment(text):
         return "Negative / critical"
     return "Neutral / unclear"
 
-def parse_entries(entries, source_name):
-    rows = []
+def parse_entries(entries, source_name, exclusions):
     posts = []
 
     for entry in entries:
@@ -104,121 +128,168 @@ def parse_entries(entries, source_name):
         if summary and summary not in title:
             text = f"{title} — {summary}"
 
-        mentions = detect_mentions(text)
+        mentions = detect_mentions(text, exclusions)
         sentiment = simple_sentiment(text)
 
-        item = {
+        posts.append({
             "source": source_name,
             "published": published,
             "text": text,
             "link": link,
             "mentions": mentions,
             "sentiment": sentiment,
-        }
-        posts.append(item)
+        })
 
-        for mention in mentions:
-            rows.append({
-                "Source": source_name,
-                "Published": published,
-                "Company": mention["company"],
-                "Ticker": mention["ticker"],
-                "Matched term": mention["matched_term"],
-                "Sentiment": sentiment,
-                "Text": text[:320] + ("..." if len(text) > 320 else ""),
-                "Link": link,
+    return posts
+
+def group_posts_by_company(posts):
+    groups = defaultdict(list)
+
+    for post in posts:
+        seen_keys_for_post = set()
+        for mention in post["mentions"]:
+            key = (mention["company"], mention["ticker"])
+            if key in seen_keys_for_post:
+                continue
+            seen_keys_for_post.add(key)
+
+            groups[key].append({
+                **post,
+                "matched_term": mention["matched_term"],
             })
 
-    return rows, posts
+    return dict(sorted(groups.items(), key=lambda item: item[0][0]))
+
+def render_grouped_results(posts, error=None):
+    if error:
+        st.error("A source could not be fetched right now.")
+        st.write(error)
+
+    groups = group_posts_by_company(posts)
+    total_mentions = sum(len(items) for items in groups.values())
+
+    col1, col2 = st.columns(2)
+    col1.metric("Companies / tickers found", len(groups))
+    col2.metric("Matching items found", total_mentions)
+
+    if not groups:
+        st.info("No watchlist company mentions found in the items scanned.")
+        return
+
+    summary_rows = []
+    for (company, ticker), items in groups.items():
+        sources = sorted(set(item["source"] for item in items))
+        latest = items[0]["published"] if items else ""
+        summary_rows.append({
+            "Company": company,
+            "Ticker": ticker,
+            "Items": len(items),
+            "Sources": ", ".join(sources),
+            "Latest / first shown": latest,
+        })
+
+    st.subheader("Grouped summary")
+    st.dataframe(summary_rows, use_container_width=True, hide_index=True)
+
+    st.subheader("Grouped matching items")
+
+    for (company, ticker), items in groups.items():
+        with st.expander(f"{company} ({ticker}) — {len(items)} item(s)", expanded=True):
+            st.markdown(
+                """
+                <div style="max-height: 420px; overflow-y: auto; padding-right: 12px;">
+                """,
+                unsafe_allow_html=True,
+            )
+
+            for item in items:
+                st.markdown(f"**{item['source']}** · {item['published']} · `{item['sentiment']}`")
+                st.caption(f"Matched term: {item['matched_term']}")
+                st.write(item["text"])
+                if item["link"]:
+                    st.link_button("Open source", item["link"])
+                st.divider()
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+def render_all_items(posts):
+    st.subheader("All scanned items")
+    for post in posts:
+        with st.container(border=True):
+            st.caption(f'{post["source"]} · {post["published"]}')
+            st.write(post["text"])
+            if post["link"]:
+                st.link_button("Open source", post["link"])
 
 st.title("Trump Company & Stock Mention Tracker")
-st.caption("Simple demo: scans archived Trump Truth Social posts plus recent news headlines for company, ticker, product, and CEO mentions.")
+st.caption("Scans archived Trump Truth Social posts plus recent news headlines for company, ticker, product, and CEO mentions.")
 
 with st.sidebar:
     st.header("Settings")
     truth_limit = st.slider("Truth Social posts to scan", min_value=10, max_value=100, value=50, step=10)
     news_limit = st.slider("News headlines to scan", min_value=10, max_value=100, value=50, step=10)
+
     news_query = st.text_input(
         "News search query",
         value='Trump company OR stock OR shares OR CEO OR Apple OR Nvidia OR Intel OR Dell OR Tesla'
     )
-    show_all = st.checkbox("Show items with no company mentions", value=False)
+
+    exclude_raw = st.text_area(
+        "Exclude companies / tickers / names",
+        value="",
+        placeholder="Example: DJT, Trump Media, Tesla, Elon Musk",
+        help="Comma-separated. Excludes matching companies, tickers, or matched watchlist terms."
+    )
+
+    show_all = st.checkbox("Show all scanned items", value=False)
+
     st.markdown("---")
     st.caption("Truth source: Trump’s Truth RSS archive. News source: Google News RSS.")
 
+exclusions = normalise_exclusions(exclude_raw)
+
 tab1, tab2, tab3 = st.tabs(["Combined results", "Truth Social", "News"])
 
-truth_rows, truth_posts, news_rows, news_posts = [], [], [], []
+truth_posts, news_posts = [], []
 
-# Truth Social
 try:
     truth_entries = fetch_rss(TRUTH_FEED_URL, limit=truth_limit)
-    truth_rows, truth_posts = parse_entries(truth_entries, "Truth Social archive")
+    truth_posts = parse_entries(truth_entries, "Truth Social archive", exclusions)
 except Exception as e:
     truth_error = str(e)
 else:
     truth_error = None
 
-# News
 try:
     news_entries = fetch_rss(google_news_url(news_query), limit=news_limit)
-    news_rows, news_posts = parse_entries(news_entries, "News headline")
+    news_posts = parse_entries(news_entries, "News headline", exclusions)
 except Exception as e:
     news_error = str(e)
 else:
     news_error = None
 
-all_rows = truth_rows + news_rows
 all_posts = truth_posts + news_posts
 
-def render_results(rows, posts, error=None):
-    if error:
-        st.error("A source could not be fetched right now.")
-        st.write(error)
-
-    st.metric("Company mentions found", len(rows))
-
-    if rows:
-        st.subheader("Detected company mentions")
-        st.dataframe(rows, use_container_width=True, hide_index=True)
-
-        st.subheader("Matching items")
-        for post in posts:
-            if not post["mentions"]:
-                continue
-
-            names = ", ".join([f'{m["company"]} ({m["ticker"]})' for m in post["mentions"]])
-            with st.container(border=True):
-                st.markdown(f"### {names}")
-                st.caption(f'{post["source"]} · {post["published"]} · {post["sentiment"]}')
-                st.write(post["text"])
-                if post["link"]:
-                    st.link_button("Open source", post["link"])
-    else:
-        st.info("No watchlist company mentions found in the items scanned.")
-
-    if show_all:
-        st.subheader("All scanned items")
-        for post in posts:
-            with st.container(border=True):
-                st.caption(f'{post["source"]} · {post["published"]}')
-                st.write(post["text"])
-                if post["link"]:
-                    st.link_button("Open source", post["link"])
-
 with tab1:
+    if truth_error:
+        st.warning(f"Truth Social source could not be fetched: {truth_error}")
+    if news_error:
+        st.warning(f"News source could not be fetched: {news_error}")
+
     combined_error = None
     if truth_error and news_error:
         combined_error = f"Truth Social error: {truth_error}\n\nNews error: {news_error}"
-    elif truth_error:
-        st.warning(f"Truth Social source could not be fetched: {truth_error}")
-    elif news_error:
-        st.warning(f"News source could not be fetched: {news_error}")
 
-    render_results(all_rows, all_posts, combined_error)
+    render_grouped_results(all_posts, combined_error)
+    if show_all:
+        render_all_items(all_posts)
 
 with tab2:
-    render_results(truth_rows, truth_posts, truth_error)
+    render_grouped_results(truth_posts, truth_error)
+    if show_all:
+        render_all_items(truth_posts)
 
 with tab3:
-    render_results(news_rows, news_posts, news_error)
+    render_grouped_results(news_posts, news_error)
+    if show_all:
+        render_all_items(news_posts)
