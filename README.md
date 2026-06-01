@@ -1,21 +1,22 @@
-# Trump Company Mention Tracker
+# Trump Company & Stock Mention Tracker
 
-A simple Streamlit dashboard that scans recent archived Trump Truth Social posts for company, ticker, product, and CEO mentions.
+A simple Streamlit dashboard that scans:
 
-## Files
+1. Archived Trump Truth Social posts via Trump’s Truth RSS
+2. Recent news headlines via Google News RSS
 
-- `app.py` — the app
-- `requirements.txt` — dependencies
+It highlights company, ticker, product, and CEO mentions from a watchlist.
 
-## Deploy on Streamlit Community Cloud
+## Deploy
 
-1. Upload these files to a GitHub repository.
-2. Go to Streamlit Community Cloud.
-3. Click **Create app**.
-4. Select your repository.
-5. Set the main file path to `app.py`.
-6. Click **Deploy**.
+Upload these files to your GitHub repository:
+
+- app.py
+- requirements.txt
+- README.md
+
+Then redeploy your Streamlit app.
 
 ## Notes
 
-This version uses the Trump’s Truth RSS archive instead of calling Truth Social directly, because Truth Social may block automated requests from hosted apps.
+This is a simple proof-of-concept. It does not use a paid news API, database, login system, or alerts yet.
