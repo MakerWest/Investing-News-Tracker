@@ -6,6 +6,7 @@ from collections import defaultdict
 import requests
 import feedparser
 import streamlit as st
+import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="Trump Company Mention Tracker", layout="wide")
@@ -169,6 +170,68 @@ def group_posts_by_company(posts):
 
     return dict(sorted(groups.items(), key=lambda item: item[0][0]))
 
+def render_clickable_summary_table(groups):
+    rows = []
+    for (company, ticker), items in groups.items():
+        sources = ", ".join(sorted(set(item["source"] for item in items)))
+        latest = items[0]["published"] if items else ""
+        aid = anchor_id(company, ticker)
+
+        rows.append(f"""
+        <tr onclick="parent.location.hash='{aid}'">
+            <td>{html.escape(company)}</td>
+            <td>{html.escape(ticker)}</td>
+            <td>{len(items)}</td>
+            <td>{html.escape(sources)}</td>
+            <td>{html.escape(latest)}</td>
+        </tr>
+        """)
+
+    table_html = """
+    <style>
+      body { margin: 0; font-family: sans-serif; }
+      table.click-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      .click-table th {
+        text-align: left;
+        padding: 9px 11px;
+        border-bottom: 1px solid rgba(49, 51, 63, 0.25);
+        font-weight: 600;
+        background: rgba(250, 250, 250, 0.04);
+      }
+      .click-table td {
+        padding: 8px 11px;
+        border-bottom: 1px solid rgba(49, 51, 63, 0.12);
+      }
+      .click-table tbody tr {
+        cursor: pointer;
+      }
+      .click-table tbody tr:hover {
+        background: rgba(49, 51, 63, 0.06);
+      }
+    </style>
+    <table class="click-table">
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Ticker</th>
+          <th>Items</th>
+          <th>Sources</th>
+          <th>Latest / first shown</th>
+        </tr>
+      </thead>
+      <tbody>
+        ROWS_HERE
+      </tbody>
+    </table>
+    """.replace("ROWS_HERE", "".join(rows))
+
+    height = min(520, 48 + 36 * max(1, len(rows)))
+    components.html(table_html, height=height, scrolling=True)
+
 def render_grouped_results(posts, error=None):
     if error:
         st.error("A source could not be fetched right now.")
@@ -186,46 +249,16 @@ def render_grouped_results(posts, error=None):
         return
 
     st.subheader("Grouped summary")
-
-    summary_rows = []
-    for (company, ticker), items in groups.items():
-        sources = sorted(set(item["source"] for item in items))
-        latest = items[0]["published"] if items else ""
-        aid = anchor_id(company, ticker)
-        summary_rows.append({
-            "Jump": f"#{aid}",
-            "Company": company,
-            "Ticker": ticker,
-            "Items": len(items),
-            "Sources": ", ".join(sources),
-            "Latest / first shown": latest,
-            "_url": f"#{aid}",
-        })
-
-    # Use st.column_config.LinkColumn so the "Jump" cell is clickable while preserving the table layout.
-    st.dataframe(
-        summary_rows,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Jump": st.column_config.LinkColumn(
-                "Jump",
-                display_text="Open",
-                help="Click to jump to this company's matching items."
-            ),
-            "_url": None,
-        },
-    )
-
-    st.caption("Click **Open** in the Jump column to move to that company’s matching items.")
+    st.caption("Click any row to scroll to that company’s matching items.")
+    render_clickable_summary_table(groups)
 
     st.subheader("Grouped matching items")
 
     for (company, ticker), items in groups.items():
         aid = anchor_id(company, ticker)
-        st.markdown(f'<a id="{aid}"></a>', unsafe_allow_html=True)
+        st.markdown(f'<div id="{aid}"></div>', unsafe_allow_html=True)
 
-        with st.expander(f"{company} ({ticker}) — {len(items)} item(s)", expanded=True):
+        with st.expander(f"{company} ({ticker}) — {len(items)} item(s)", expanded=False):
             for item in items:
                 st.markdown(f"**{item['source']}** · {item['published']} · `{item['sentiment']}`")
                 st.caption(f"Matched term: {item['matched_term']}")
@@ -306,7 +339,7 @@ with tab1:
 
     combined_error = None
     if truth_error and news_error:
-        combined_error = f"Truth Social error: {truth_error}\n\nNews error: {news_error}"
+        combined_error = f"Truth Social error: {truth_error}\\n\\nNews error: {news_error}"
 
     render_grouped_results(all_posts, combined_error)
     if show_all:

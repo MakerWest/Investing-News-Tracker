@@ -1,11 +1,11 @@
 # Trump Company & Stock Mention Tracker
 
-This version restores the table UI and adds clickable table links.
+This version includes:
 
-Features:
-
-- Clean grouped summary table
-- Clickable "Jump" column in the table
+- Clickable grouped summary table rows
+- No separate jump column
+- No blue/underlined hyperlink styling
+- Matching item sections collapsed by default
 - Short previews instead of long walls of text
 - "Show full text" dropdowns
 - Truth Social archive scanning
