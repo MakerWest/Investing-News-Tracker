@@ -54,11 +54,6 @@ def short_text(text, max_chars=450):
         return text
     return text[:max_chars].rsplit(" ", 1)[0] + "..."
 
-def anchor_id(company, ticker):
-    raw = f"{company}-{ticker}".lower()
-    raw = re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
-    return raw
-
 def fetch_rss(url, limit=50):
     response = requests.get(
         url,
@@ -169,82 +164,7 @@ def group_posts_by_company(posts):
 
     return dict(sorted(groups.items(), key=lambda item: item[0][0]))
 
-def render_clickable_summary_table(groups):
-    rows = []
-    for (company, ticker), items in groups.items():
-        sources = ", ".join(sorted(set(item["source"] for item in items)))
-        latest = items[0]["published"] if items else ""
-        aid = anchor_id(company, ticker)
-
-        rows.append(f"""
-        <a class="summary-row" href="#{aid}">
-            <span>{html.escape(company)}</span>
-            <span>{html.escape(ticker)}</span>
-            <span>{len(items)}</span>
-            <span>{html.escape(sources)}</span>
-            <span>{html.escape(latest)}</span>
-        </a>
-        """)
-
-    table_html = """
-    <style>
-      .summary-table {
-        width: 100%;
-        border: 1px solid rgba(255,255,255,0.18);
-        border-radius: 8px;
-        overflow: hidden;
-        margin-bottom: 1rem;
-      }
-      .summary-header, .summary-row {
-        display: grid;
-        grid-template-columns: 1.25fr 0.55fr 0.45fr 1.1fr 1.3fr;
-        gap: 0;
-        align-items: center;
-      }
-      .summary-header {
-        color: #ffffff !important;
-        font-weight: 700;
-        background: rgba(255,255,255,0.10);
-        border-bottom: 1px solid rgba(255,255,255,0.22);
-      }
-      .summary-header span, .summary-row span {
-        padding: 9px 11px;
-        color: #ffffff !important;
-        overflow-wrap: anywhere;
-      }
-      .summary-row {
-        color: #ffffff !important;
-        text-decoration: none !important;
-        border-bottom: 1px solid rgba(255,255,255,0.12);
-        cursor: pointer;
-      }
-      .summary-row:link,
-      .summary-row:visited,
-      .summary-row:hover,
-      .summary-row:active {
-        color: #ffffff !important;
-        text-decoration: none !important;
-      }
-      .summary-row:hover {
-        background: rgba(255,255,255,0.08);
-      }
-    </style>
-
-    <div class="summary-table">
-      <div class="summary-header">
-        <span>Company</span>
-        <span>Ticker</span>
-        <span>Items</span>
-        <span>Sources</span>
-        <span>Latest / first shown</span>
-      </div>
-      ROWS_HERE
-    </div>
-    """.replace("ROWS_HERE", "".join(rows))
-
-    st.markdown(table_html, unsafe_allow_html=True)
-
-def render_grouped_results(posts, error=None):
+def render_grouped_results(posts, error=None, key_prefix=""):
     if error:
         st.error("A source could not be fetched right now.")
         st.write(error)
@@ -261,15 +181,44 @@ def render_grouped_results(posts, error=None):
         return
 
     st.subheader("Grouped summary")
-    st.caption("Click any row to scroll to that company’s matching items.")
-    render_clickable_summary_table(groups)
+
+    summary_rows = []
+    company_options = ["Show all"]
+    key_lookup = {}
+
+    for (company, ticker), items in groups.items():
+        sources = sorted(set(item["source"] for item in items))
+        latest = items[0]["published"] if items else ""
+        label = f"{company} ({ticker})"
+        company_options.append(label)
+        key_lookup[label] = (company, ticker)
+
+        summary_rows.append({
+            "Company": company,
+            "Ticker": ticker,
+            "Items": len(items),
+            "Sources": ", ".join(sources),
+            "Latest / first shown": latest,
+        })
+
+    st.dataframe(summary_rows, use_container_width=True, hide_index=True)
+
+    selected_company = st.radio(
+        "Show matching items for",
+        company_options,
+        horizontal=True,
+        key=f"{key_prefix}_company_filter",
+    )
+
+    if selected_company == "Show all":
+        groups_to_render = groups
+    else:
+        selected_key = key_lookup[selected_company]
+        groups_to_render = {selected_key: groups[selected_key]}
 
     st.subheader("Grouped matching items")
 
-    for (company, ticker), items in groups.items():
-        aid = anchor_id(company, ticker)
-        st.markdown(f'<span id="{aid}"></span>', unsafe_allow_html=True)
-
+    for (company, ticker), items in groups_to_render.items():
         with st.expander(f"{company} ({ticker}) — {len(items)} item(s)", expanded=False):
             for item in items:
                 st.markdown(f"**{item['source']}** · {item['published']} · `{item['sentiment']}`")
@@ -353,16 +302,16 @@ with tab1:
     if truth_error and news_error:
         combined_error = f"Truth Social error: {truth_error}\\n\\nNews error: {news_error}"
 
-    render_grouped_results(all_posts, combined_error)
+    render_grouped_results(all_posts, combined_error, key_prefix="combined")
     if show_all:
         render_all_items(all_posts)
 
 with tab2:
-    render_grouped_results(truth_posts, truth_error)
+    render_grouped_results(truth_posts, truth_error, key_prefix="truth")
     if show_all:
         render_all_items(truth_posts)
 
 with tab3:
-    render_grouped_results(news_posts, news_error)
+    render_grouped_results(news_posts, news_error, key_prefix="news")
     if show_all:
         render_all_items(news_posts)
