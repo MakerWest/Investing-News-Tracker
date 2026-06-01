@@ -54,6 +54,11 @@ def short_text(text, max_chars=450):
         return text
     return text[:max_chars].rsplit(" ", 1)[0] + "..."
 
+def anchor_id(company, ticker):
+    raw = f"{company}-{ticker}".lower()
+    raw = re.sub(r"[^a-z0-9]+", "-", raw).strip("-")
+    return raw
+
 def fetch_rss(url, limit=50):
     response = requests.get(
         url,
@@ -183,41 +188,43 @@ def render_grouped_results(posts, error=None):
     st.subheader("Grouped summary")
 
     summary_rows = []
-    company_options = []
     for (company, ticker), items in groups.items():
         sources = sorted(set(item["source"] for item in items))
         latest = items[0]["published"] if items else ""
-        label = f"{company} ({ticker})"
-        company_options.append(label)
+        aid = anchor_id(company, ticker)
         summary_rows.append({
+            "Jump": f"#{aid}",
             "Company": company,
             "Ticker": ticker,
             "Items": len(items),
             "Sources": ", ".join(sources),
             "Latest / first shown": latest,
+            "_url": f"#{aid}",
         })
 
-    st.dataframe(summary_rows, use_container_width=True, hide_index=True)
-
-    selected_company = st.selectbox(
-        "Jump to company",
-        options=["Show all"] + company_options,
-        help="Streamlit tables do not support reliable in-page jump links, so this filters the matching sections below."
+    # Use st.column_config.LinkColumn so the "Jump" cell is clickable while preserving the table layout.
+    st.dataframe(
+        summary_rows,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Jump": st.column_config.LinkColumn(
+                "Jump",
+                display_text="Open",
+                help="Click to jump to this company's matching items."
+            ),
+            "_url": None,
+        },
     )
 
-    if selected_company != "Show all":
-        selected_key = None
-        for key in groups:
-            if f"{key[0]} ({key[1]})" == selected_company:
-                selected_key = key
-                break
-        groups_to_render = {selected_key: groups[selected_key]} if selected_key else groups
-    else:
-        groups_to_render = groups
+    st.caption("Click **Open** in the Jump column to move to that company’s matching items.")
 
     st.subheader("Grouped matching items")
 
-    for (company, ticker), items in groups_to_render.items():
+    for (company, ticker), items in groups.items():
+        aid = anchor_id(company, ticker)
+        st.markdown(f'<a id="{aid}"></a>', unsafe_allow_html=True)
+
         with st.expander(f"{company} ({ticker}) — {len(items)} item(s)", expanded=True):
             for item in items:
                 st.markdown(f"**{item['source']}** · {item['published']} · `{item['sentiment']}`")

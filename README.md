@@ -1,13 +1,13 @@
 # Trump Company & Stock Mention Tracker
 
-This version fixes the layout issue by removing custom HTML/CSS and restoring the grouped summary table.
+This version restores the table UI and adds clickable table links.
 
 Features:
 
 - Clean grouped summary table
+- Clickable "Jump" column in the table
 - Short previews instead of long walls of text
 - "Show full text" dropdowns
-- "Jump to company" dropdown that filters directly to one company section
 - Truth Social archive scanning
 - Google News RSS headline scanning
 - Company/ticker/name exclusions
