@@ -1,10 +1,12 @@
 # Trump Company & Stock Mention Tracker
 
-This version includes:
+This version fixes row clicking and text colour.
 
-- Clickable grouped summary table rows
-- No separate jump column
-- No blue/underlined hyperlink styling
+Features:
+
+- Clickable grouped summary rows
+- White table/text styling
+- No blue/underlined link styling in the table
 - Matching item sections collapsed by default
 - Short previews instead of long walls of text
 - "Show full text" dropdowns

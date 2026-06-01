@@ -6,7 +6,6 @@ from collections import defaultdict
 import requests
 import feedparser
 import streamlit as st
-import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="Trump Company Mention Tracker", layout="wide")
@@ -178,59 +177,72 @@ def render_clickable_summary_table(groups):
         aid = anchor_id(company, ticker)
 
         rows.append(f"""
-        <tr onclick="parent.location.hash='{aid}'">
-            <td>{html.escape(company)}</td>
-            <td>{html.escape(ticker)}</td>
-            <td>{len(items)}</td>
-            <td>{html.escape(sources)}</td>
-            <td>{html.escape(latest)}</td>
-        </tr>
+        <a class="summary-row" href="#{aid}">
+            <span>{html.escape(company)}</span>
+            <span>{html.escape(ticker)}</span>
+            <span>{len(items)}</span>
+            <span>{html.escape(sources)}</span>
+            <span>{html.escape(latest)}</span>
+        </a>
         """)
 
     table_html = """
     <style>
-      body { margin: 0; font-family: sans-serif; }
-      table.click-table {
+      .summary-table {
         width: 100%;
-        border-collapse: collapse;
-        font-size: 14px;
+        border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 1rem;
       }
-      .click-table th {
-        text-align: left;
+      .summary-header, .summary-row {
+        display: grid;
+        grid-template-columns: 1.25fr 0.55fr 0.45fr 1.1fr 1.3fr;
+        gap: 0;
+        align-items: center;
+      }
+      .summary-header {
+        color: #ffffff !important;
+        font-weight: 700;
+        background: rgba(255,255,255,0.10);
+        border-bottom: 1px solid rgba(255,255,255,0.22);
+      }
+      .summary-header span, .summary-row span {
         padding: 9px 11px;
-        border-bottom: 1px solid rgba(49, 51, 63, 0.25);
-        font-weight: 600;
-        background: rgba(250, 250, 250, 0.04);
+        color: #ffffff !important;
+        overflow-wrap: anywhere;
       }
-      .click-table td {
-        padding: 8px 11px;
-        border-bottom: 1px solid rgba(49, 51, 63, 0.12);
-      }
-      .click-table tbody tr {
+      .summary-row {
+        color: #ffffff !important;
+        text-decoration: none !important;
+        border-bottom: 1px solid rgba(255,255,255,0.12);
         cursor: pointer;
       }
-      .click-table tbody tr:hover {
-        background: rgba(49, 51, 63, 0.06);
+      .summary-row:link,
+      .summary-row:visited,
+      .summary-row:hover,
+      .summary-row:active {
+        color: #ffffff !important;
+        text-decoration: none !important;
+      }
+      .summary-row:hover {
+        background: rgba(255,255,255,0.08);
       }
     </style>
-    <table class="click-table">
-      <thead>
-        <tr>
-          <th>Company</th>
-          <th>Ticker</th>
-          <th>Items</th>
-          <th>Sources</th>
-          <th>Latest / first shown</th>
-        </tr>
-      </thead>
-      <tbody>
-        ROWS_HERE
-      </tbody>
-    </table>
+
+    <div class="summary-table">
+      <div class="summary-header">
+        <span>Company</span>
+        <span>Ticker</span>
+        <span>Items</span>
+        <span>Sources</span>
+        <span>Latest / first shown</span>
+      </div>
+      ROWS_HERE
+    </div>
     """.replace("ROWS_HERE", "".join(rows))
 
-    height = min(520, 48 + 36 * max(1, len(rows)))
-    components.html(table_html, height=height, scrolling=True)
+    st.markdown(table_html, unsafe_allow_html=True)
 
 def render_grouped_results(posts, error=None):
     if error:
@@ -256,7 +268,7 @@ def render_grouped_results(posts, error=None):
 
     for (company, ticker), items in groups.items():
         aid = anchor_id(company, ticker)
-        st.markdown(f'<div id="{aid}"></div>', unsafe_allow_html=True)
+        st.markdown(f'<span id="{aid}"></span>', unsafe_allow_html=True)
 
         with st.expander(f"{company} ({ticker}) — {len(items)} item(s)", expanded=False):
             for item in items:
