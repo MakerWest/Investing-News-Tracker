@@ -1,18 +1,18 @@
 # Trump Company & Stock Mention Tracker
 
-This version reverts to a stable native Streamlit table and replaces broken row-click behaviour with a reliable company filter.
+This version adds a Truth Social archive freshness experiment.
 
-Features:
+New diagnostic tab:
 
-- Clean native grouped summary table
-- Company filter below the table
-- Matching item sections collapsed by default
-- Short previews instead of long walls of text
-- "Show full text" dropdowns
-- Truth Social archive scanning
-- Google News RSS headline scanning
-- Company/ticker/name exclusions
-- Grouped results by company/ticker
+- Shows latest raw archive posts, even if they do not match any company/ticker
+- Shows newest archive post age
+- Shows whether the newest post has a company mention
+- Shows archive feed fetch time and HTTP status
+- Adds an optional cache-bypass toggle
+
+This lets you tell whether:
+1. The archive feed is stale/incomplete, or
+2. The post exists in the archive but simply does not mention a tracked company.
 
 ## Deploy
 
